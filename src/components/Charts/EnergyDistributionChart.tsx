@@ -1,4 +1,5 @@
 import React from 'react';
+import type { TooltipItem } from 'chart.js';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -81,7 +82,7 @@ const EnergyDistributionChart: React.FC<EnergyDistributionChartProps> = ({
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function(context: TooltipItem<'pie'>) {
             const value = context.parsed;
             const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
             const percentage = ((value / total) * 100).toFixed(1);
