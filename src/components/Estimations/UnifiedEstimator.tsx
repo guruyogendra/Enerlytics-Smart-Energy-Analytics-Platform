@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import React, { useState, useMemo } from 'react';
 import { Clock, BarChart, Target, Percent, TrendingUp, DollarSign } from 'lucide-react';
 import PaybackChart from '../Charts/PaybackChart';
+import SaveToHistoryButton from '../common/SaveToHistoryButton';
 
 interface EstimationResults {
   paybackPeriod: number;
@@ -14,10 +13,9 @@ interface EstimationResults {
 }
 
 const UnifiedEstimator: React.FC = () => {
-  const { user } = useAuth();
   const [installationCost, setInstallationCost] = useState<number>(500000);
   const [annualSaving, setAnnualSaving] = useState<number>(96000);
-  const [monthlySavings, setMonthlySavings] = useState<number>(8000);
+  const monthlySavings = annualSaving / 12;
   
   // NPV analysis parameters
   const [projectLifetime, setProjectLifetime] = useState<number>(10);
@@ -51,26 +49,6 @@ const UnifiedEstimator: React.FC = () => {
     };
   }, [installationCost, annualSaving, projectLifetime]);
 
-  // Debounced save: avoid write storms while typing
-  useEffect(() => {
-    if (!user || installationCost <= 0 || annualSaving <= 0) return;
-    const debounce = setTimeout(() => {
-      void saveEstimationToHistory({
-        installationCost,
-        annualSaving,
-        projectLifetime,
-        discountRate,
-      }, results);
-    }, 800);
-    return () => clearTimeout(debounce);
-    // Include results to persist the computed values corresponding to inputs
-  }, [user, installationCost, annualSaving, projectLifetime, discountRate, results]);
-
-  // Update monthly savings when annual savings change
-  useEffect(() => {
-    setMonthlySavings(annualSaving / 12);
-  }, [annualSaving]);
-
   const formatCurrency = (amount: number) => {
     return `₹${amount.toLocaleString('en-IN')}`;
   };
@@ -84,37 +62,6 @@ const UnifiedEstimator: React.FC = () => {
       return `${(years * 12).toFixed(1)} months`;
     }
     return `${years.toFixed(1)} years`;
-  };
-
-  // Generate data for charts (memoized)
-  const chartData = useMemo(() => {
-    const data: Array<{ year: number; cumulativeSavings: number; netPosition: number; roi: number; isBreakEven: boolean }> = [];
-    for (let year = 1; year <= projectLifetime; year++) {
-      const cumulativeSavings = annualSaving * year;
-      const netPosition = cumulativeSavings - installationCost;
-      const roi = ((cumulativeSavings - installationCost) / installationCost) * 100;
-      data.push({
-        year,
-        cumulativeSavings,
-        netPosition,
-        roi,
-        isBreakEven: year >= results.breakEvenYear,
-      });
-    }
-    return data;
-  }, [annualSaving, installationCost, results.breakEvenYear, projectLifetime]);
-
-  const saveEstimationToHistory = async (inputs: any, results: EstimationResults) => {
-    try {
-      await supabase.from('estimation_history').insert({
-        user_id: user?.id,
-        estimation_type: 'unified',
-        inputs,
-        results,
-      });
-    } catch (error) {
-      console.error('Error saving estimation history:', error);
-    }
   };
 
   return (
@@ -195,6 +142,18 @@ const UnifiedEstimator: React.FC = () => {
             max="20"
             step="0.1"
             placeholder="Discount rate"
+          />
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <SaveToHistoryButton
+            entry={{
+              table: 'estimation_history',
+              type: 'unified',
+              inputs: { installationCost, annualSaving, projectLifetime, discountRate },
+              results,
+            }}
+            disabled={installationCost <= 0 || annualSaving <= 0}
           />
         </div>
       </div>
