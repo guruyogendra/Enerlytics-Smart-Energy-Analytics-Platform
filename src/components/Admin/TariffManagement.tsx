@@ -1,72 +1,88 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { Settings, Save, Plus, Trash2, Edit } from 'lucide-react';
-import { TariffSettings } from '../../types';
+import { Settings, Info, AlertTriangle } from 'lucide-react';
+import {
+  domesticTariff,
+  commercialEnergyTariff,
+  commercialFixedRate,
+  industrialFixedRate,
+  industrialTariffRates,
+} from '../../utils/calculations';
+import { TariffSlab } from '../../types';
+
+/**
+ * Tariff Management (interim, read-only).
+ *
+ * The rates shown here are read directly from src/utils/calculations.ts, which
+ * is what every calculator uses today, so this page can no longer drift from
+ * the real calculation values. The previous Edit / Save buttons had no
+ * handlers and the "Recent Tariff Changes" list was hard-coded sample text;
+ * both have been removed. Editable, database-backed tariffs (per state /
+ * provider / effective date) will be added once the existing Supabase schema
+ * and RLS policies have been reviewed.
+ */
+
+const slabRows = (slabs: TariffSlab[]) => {
+  let prev = 0;
+  return slabs.map(({ threshold, rate }) => {
+    const label = Number.isFinite(threshold) ? `${prev + 1}–${threshold}` : `Above ${prev}`;
+    prev = threshold;
+    return { label, rate };
+  });
+};
+
+const formatSupply = (key: string) => (key === 'LT' ? 'LT' : `HT ${key}`);
+const formatCategory = (key: string) =>
+  key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+/** Flattens the nested industrial rate table into display rows. */
+const industrialRows = () => {
+  const rows: Array<{ category: string; supply: string; detail: string; rate: number }> = [];
+  for (const [category, bySupply] of Object.entries(industrialTariffRates)) {
+    for (const [supply, value] of Object.entries(bySupply)) {
+      if (typeof value === 'number') {
+        rows.push({ category: formatCategory(category), supply: formatSupply(supply), detail: '—', rate: value });
+      } else {
+        for (const [demand, byTod] of Object.entries(value as Record<string, Record<string, number>>)) {
+          for (const [tod, rate] of Object.entries(byTod)) {
+            rows.push({
+              category: formatCategory(category),
+              supply: formatSupply(supply),
+              detail: `${formatCategory(demand)} · ${formatCategory(tod)}`,
+              rate,
+            });
+          }
+        }
+      }
+    }
+  }
+  return rows;
+};
+
+const commercialFlatRates = [
+  { name: 'Advertising Hoardings', rate: 12.25 },
+  { name: 'Function Halls / Auditoriums', rate: 12.25 },
+  { name: 'Startup Power', rate: 12.25 },
+  { name: 'Electric Vehicles / Charging Stations', rate: 6.7 },
+  { name: 'Green Power', rate: 12.25 },
+];
 
 const TariffManagement: React.FC = () => {
-  const { user, isAdmin } = useAuth();
-  const [tariffs, setTariffs] = useState<TariffSettings[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingTariff, setEditingTariff] = useState<TariffSettings | null>(null);
-  const [newTariff, setNewTariff] = useState({
-    tariff_type: 'domestic' as 'domestic' | 'commercial' | 'industrial',
-    tariff_data: {},
-  });
+  const { isAdmin } = useAuth();
+  const [dbTariffCount, setDbTariffCount] = useState<number | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchTariffs();
-    }
+    if (!isAdmin) return;
+    supabase
+      .from('tariff_settings')
+      .select('id', { count: 'exact', head: true })
+      .then(({ count, error }) => {
+        if (error) setDbError(error.message);
+        else setDbTariffCount(count ?? 0);
+      });
   }, [isAdmin]);
-
-  const fetchTariffs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('tariff_settings')
-        .select('*')
-        .order('updated_at', { ascending: false });
-
-      if (error) throw error;
-      setTariffs(data || []);
-    } catch (error) {
-      console.error('Error fetching tariffs:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveTariff = async (tariffData: any) => {
-    try {
-      const { error } = await supabase
-        .from('tariff_settings')
-        .upsert({
-          ...tariffData,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (error) throw error;
-      fetchTariffs();
-      setEditingTariff(null);
-    } catch (error) {
-      console.error('Error saving tariff:', error);
-    }
-  };
-
-  const deleteTariff = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('tariff_settings')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      fetchTariffs();
-    } catch (error) {
-      console.error('Error deleting tariff:', error);
-    }
-  };
 
   if (!isAdmin) {
     return (
@@ -80,13 +96,8 @@ const TariffManagement: React.FC = () => {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
-      </div>
-    );
-  }
+  const thClass = 'px-4 py-3 text-left text-sm font-medium text-gray-700';
+  const tdClass = 'px-4 py-2 text-sm';
 
   return (
     <div className="space-y-6">
@@ -95,148 +106,153 @@ const TariffManagement: React.FC = () => {
           <Settings className="h-8 w-8" />
           <div>
             <h2 className="text-2xl font-bold mb-2">Tariff Management</h2>
-            <p className="text-red-100">Manage electricity tariff rates and structures</p>
+            <p className="text-red-100">Electricity tariff rates currently used by the calculators</p>
           </div>
         </div>
       </div>
 
-      {/* Domestic Tariff Settings */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="note">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
+          <div className="space-y-1">
+            <p>
+              <strong>Read-only.</strong> These are the built-in rates applied by the Domestic, Commercial and
+              Industrial calculators. Editing will be enabled once tariffs are stored per state, provider and
+              effective date in the database.
+            </p>
+            <p>
+              The source (state, distribution company and tariff order) of these rates has not been confirmed.
+              Verify them against the official tariff order before relying on results.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-white p-4 text-sm text-gray-700 shadow">
+        <div className="flex items-center gap-2">
+          <Info className="h-4 w-4 text-blue-500" aria-hidden="true" />
+          {dbError ? (
+            <span className="text-red-600">Could not read the tariff_settings table: {dbError}</span>
+          ) : dbTariffCount === null ? (
+            <span>Checking database tariff records…</span>
+          ) : (
+            <span>
+              Database <code>tariff_settings</code> records: <strong>{dbTariffCount}</strong> (not currently used by the
+              calculators).
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Domestic */}
       <div className="bg-white rounded-xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Domestic Tariff Slabs</h3>
+        <h3 className="text-lg font-semibold mb-4 text-gray-800">Domestic Tariff Slabs (telescopic)</h3>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-green-50">
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Units Range</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Rate (₹/kWh)</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-700">Actions</th>
+                <th className={thClass}>Units per month</th>
+                <th className={thClass}>Rate (₹/kWh)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              <tr><td className="px-4 py-2">0-30</td><td className="px-4 py-2">1.90</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
-              <tr><td className="px-4 py-2">31-75</td><td className="px-4 py-2">3.00</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
-              <tr><td className="px-4 py-2">76-125</td><td className="px-4 py-2">4.50</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
-              <tr><td className="px-4 py-2">126-225</td><td className="px-4 py-2">6.00</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
-              <tr><td className="px-4 py-2">226-400</td><td className="px-4 py-2">8.75</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
-              <tr><td className="px-4 py-2">400</td><td className="px-4 py-2">9.75</td><td className="px-4 py-2 text-center"><button className="text-blue-600 hover:text-blue-800"><Edit className="h-4 w-4" /></button></td></tr>
+              {slabRows(domesticTariff).map((row) => (
+                <tr key={row.label}>
+                  <td className={tdClass}>{row.label}</td>
+                  <td className={tdClass}>{row.rate.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">No fixed or customer charges are applied for domestic bills.</p>
+      </div>
+
+      {/* Commercial */}
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <h3 className="text-lg font-semibold mb-4 text-gray-800">Commercial Tariff</h3>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="overflow-x-auto">
+            <h4 className="font-medium text-gray-700 mb-2">Standard commercial (telescopic)</h4>
+            <table className="w-full">
+              <thead>
+                <tr className="bg-blue-50">
+                  <th className={thClass}>Units per month</th>
+                  <th className={thClass}>Rate (₹/kWh)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {slabRows(commercialEnergyTariff).map((row) => (
+                  <tr key={row.label}>
+                    <td className={tdClass}>{row.label}</td>
+                    <td className={tdClass}>{row.rate.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-x-auto">
+            <h4 className="font-medium text-gray-700 mb-2">Special categories (flat rate)</h4>
+            <table className="w-full">
+              <thead>
+                <tr className="bg-blue-50">
+                  <th className={thClass}>Category</th>
+                  <th className={thClass}>Rate (₹/kWh)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {commercialFlatRates.map((row) => (
+                  <tr key={row.name}>
+                    <td className={tdClass}>{row.name}</td>
+                    <td className={tdClass}>{row.rate.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          A fixed charge of ₹{commercialFixedRate}/kW/month is defined in the code but is <strong>not</strong> currently
+          applied to commercial bills.
+        </p>
+      </div>
+
+      {/* Industrial */}
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <h3 className="text-lg font-semibold mb-4 text-gray-800">Industrial Tariff</h3>
+        <p className="mb-3 text-sm text-gray-700">
+          Fixed charge: ₹{industrialFixedRate}/kW/month × sanctioned load (sanctioned load is currently fixed at 0 in the
+          calculator, so no fixed charge is applied). Cottage industries: no fixed charge.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-orange-50">
+                <th className={thClass}>Category</th>
+                <th className={thClass}>Supply</th>
+                <th className={thClass}>Demand · Time of day</th>
+                <th className={thClass}>Rate (₹/kWh)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {industrialRows().map((row) => (
+                <tr key={`${row.category}-${row.supply}-${row.detail}`}>
+                  <td className={tdClass}>{row.category}</td>
+                  <td className={tdClass}>{row.supply}</td>
+                  <td className={tdClass}>{row.detail}</td>
+                  <td className={tdClass}>{row.rate.toFixed(2)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Commercial Tariff Settings */}
       <div className="bg-white rounded-xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Commercial Tariff Structure</h3>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="font-medium text-gray-700 mb-3">Fixed Charges</h4>
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <div className="flex justify-between items-center">
-                <span>Fixed Charge Rate:</span>
-                <span className="font-semibold">₹75/kW/month</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div>
-            <h4 className="font-medium text-gray-700 mb-3">Energy Charges</h4>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                <span className="text-sm">0-50 units:</span>
-                <span className="font-semibold">₹5.40/kWh</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                <span className="text-sm">51-100 units:</span>
-                <span className="font-semibold">₹7.65/kWh</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                <span className="text-sm">101-300 units:</span>
-                <span className="font-semibold">₹9.05/kWh</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                <span className="text-sm">301-500 units:</span>
-                <span className="font-semibold">₹9.60/kWh</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                <span className="text-sm">500 units:</span>
-                <span className="font-semibold">₹10.15/kWh</span>
-                <button className="text-blue-600 hover:text-blue-800">
-                  <Edit className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Industrial Tariff Settings */}
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Industrial Tariff Structure</h3>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="font-medium">Fixed Charges:</span>
-              <span className="font-semibold">₹75/kW/month</span>
-              <button className="text-blue-600 hover:text-blue-800">
-                <Edit className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          
-          <div className="bg-red-50 p-4 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="font-medium">Energy Charges:</span>
-              <span className="font-semibold">₹6.70/kWh</span>
-              <button className="text-blue-600 hover:text-blue-800">
-                <Edit className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Save Changes Button */}
-      <div className="flex justify-end">
-        <button className="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-blue-500 text-white px-6 py-3 rounded-lg hover:shadow-md transition-all duration-200">
-          <Save className="h-5 w-5" />
-          <span>Save All Changes</span>
-        </button>
-      </div>
-
-      {/* Recent Changes Log */}
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Recent Tariff Changes</h3>
-        <div className="space-y-3">
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <div>
-              <span className="font-medium">Domestic Slab 1 Rate Updated</span>
-              <div className="text-sm text-gray-500">Changed from ₹1.85 to ₹1.90</div>
-            </div>
-            <div className="text-sm text-gray-500">2 days ago</div>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100">
-            <div>
-              <span className="font-medium">Commercial Fixed Charge Updated</span>
-              <div className="text-sm text-gray-500">Changed from ₹70 to ₹75 per kW</div>
-            </div>
-            <div className="text-sm text-gray-500">1 week ago</div>
-          </div>
-        </div>
+        <h3 className="text-lg font-semibold mb-2 text-gray-800">Tariff Change History</h3>
+        <p className="text-sm text-gray-600">
+          No change history is recorded yet. Tariff changes will be logged once audit logging is implemented.
+        </p>
       </div>
     </div>
   );
