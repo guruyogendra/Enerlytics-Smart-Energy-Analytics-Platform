@@ -7,7 +7,6 @@ import {
   TrendingUp, 
   Lightbulb, 
   History, 
-  Settings,
   LogOut,
   User,
   Shield

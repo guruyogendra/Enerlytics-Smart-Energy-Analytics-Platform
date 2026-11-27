@@ -40,8 +40,8 @@ const RegisterForm: React.FC = () => {
       if (error) throw error;
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2000);
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

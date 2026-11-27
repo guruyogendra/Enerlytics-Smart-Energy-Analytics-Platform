@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Factory, Clock, Zap, Building2, Plus, Trash2 } from 'lucide-react';
 import { calculateIndustrialBill } from '../../utils/calculations';
 import { Appliance } from '../../types';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import SaveToHistoryButton from '../common/SaveToHistoryButton';
 import BillBreakdownChart from '../Charts/BillBreakdownChart';
 import EnergyDistributionChart from '../Charts/EnergyDistributionChart';
 
@@ -120,8 +119,15 @@ const ApplianceTable: React.FC<ApplianceTableProps> = ({
   </div>
 );
 
+const supplyTypes = [
+  { id: 'LT', name: 'LT Supply', description: 'Low Tension Supply', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'cottage_industries'] },
+  { id: '11kV', name: '11 kV Supply', description: 'High Tension 11 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
+  { id: '33kV', name: '33 kV Supply', description: 'High Tension 33 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
+  { id: '132kV', name: '132 kV Supply', description: 'High Tension 132 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
+  { id: '220kV', name: '220 kV Supply', description: 'High Tension 220 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] }
+];
+
 const IndustrialCalculator: React.FC = () => {
-  const { user } = useAuth();
   const [dailyAppliances, setDailyAppliances] = useState<Appliance[]>([
     { name: 'Motor (Production)', rating: 5000, quantity: 2, hours: 8 }, // 5kW motor
     { name: 'Lighting System', rating: 500, quantity: 10, hours: 12 }, // 0.5kW per unit
@@ -139,8 +145,8 @@ const IndustrialCalculator: React.FC = () => {
   const [todType, setTodType] = useState<string>('normal');
   const [demandType, setDemandType] = useState<string>('high_demand');
 
-  // Calculate total units from appliances
-  const calculateTotalUnits = () => {
+  // Calculate total units from appliances (memoised; same formula as before)
+  const totalUnits = useMemo(() => {
     // Calculate daily energy consumption (Wh)
     const dailyEnergyWh = dailyAppliances.reduce((total, appliance) => 
       total + (appliance.rating * appliance.quantity * appliance.hours), 0
@@ -156,10 +162,13 @@ const IndustrialCalculator: React.FC = () => {
     
     // Convert to kWh
     return totalMonthlyWh / 1000;
-  };
+  }, [dailyAppliances, occasionalAppliances]);
 
-  const totalUnits = calculateTotalUnits();
-  const [result, setResult] = useState(calculateIndustrialBill(totalUnits, sanctionedLoad, category, supplyType, todType, demandType));
+  // Derived directly from the inputs; history is saved only when the user clicks "Save to history".
+  const result = useMemo(
+    () => calculateIndustrialBill(totalUnits, sanctionedLoad, category, supplyType, todType, demandType),
+    [totalUnits, sanctionedLoad, category, supplyType, todType, demandType]
+  );
 
   const industrialCategories = [
     { 
@@ -189,14 +198,6 @@ const IndustrialCalculator: React.FC = () => {
     }
   ];
 
-  const supplyTypes = [
-    { id: 'LT', name: 'LT Supply', description: 'Low Tension Supply', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'cottage_industries'] },
-    { id: '11kV', name: '11 kV Supply', description: 'High Tension 11 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
-    { id: '33kV', name: '33 kV Supply', description: 'High Tension 33 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
-    { id: '132kV', name: '132 kV Supply', description: 'High Tension 132 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] },
-    { id: '220kV', name: '220 kV Supply', description: 'High Tension 220 kV', available: ['industry_general', 'seasonal_off_season', 'energy_intensive', 'industrial_colonies'] }
-  ];
-
   const todTypes = [
     { id: 'peak', name: 'Peak Hours', description: '06:00-10:00 & 18:00-22:00', timeSlots: 'Morning: 6 AM - 10 AM, Evening: 6 PM - 10 PM' },
     { id: 'off_peak', name: 'Off-Peak Hours', description: '10:00-15:00 & 00:00-06:00', timeSlots: 'Afternoon: 10 AM - 3 PM, Night: 12 AM - 6 AM' },
@@ -207,30 +208,6 @@ const IndustrialCalculator: React.FC = () => {
     { id: 'high_demand', name: 'High Grid Demand', description: 'High electricity demand period with higher rates' },
     { id: 'low_demand', name: 'Low Grid Demand', description: 'Low electricity demand period with preferential rates' }
   ];
-
-  React.useEffect(() => {
-    const newTotalUnits = calculateTotalUnits();
-    const newResult = calculateIndustrialBill(newTotalUnits, sanctionedLoad, category, supplyType, todType, demandType);
-    setResult(newResult);
-    
-    // Save to history if user is logged in
-    if (user && (dailyAppliances.length > 0 || occasionalAppliances.length > 0)) {
-      saveToHistory(newResult);
-    }
-  }, [dailyAppliances, occasionalAppliances, sanctionedLoad, category, supplyType, todType, demandType]);
-
-  const saveToHistory = async (calculationResult: any) => {
-    try {
-      await supabase.from('calculation_history').insert({
-        user_id: user?.id,
-        calculation_type: 'industrial',
-        inputs: { dailyAppliances, occasionalAppliances, sanctionedLoad, category, supplyType, todType, demandType },
-        results: calculationResult,
-      });
-    } catch (error) {
-      console.error('Error saving calculation history:', error);
-    }
-  };
 
   const isTodApplicable = () => {
     return category === 'industry_general' && supplyType !== 'LT';
@@ -245,16 +222,16 @@ const IndustrialCalculator: React.FC = () => {
   };
 
   // Auto-adjust supply type when category changes
-  React.useEffect(() => {
-    const availableTypes = getAvailableSupplyTypes();
+  useEffect(() => {
+    const availableTypes = supplyTypes.filter(type => type.available.includes(category));
     if (!availableTypes.some(type => type.id === supplyType)) {
       setSupplyType(availableTypes[0]?.id || 'LT');
     }
-  }, [category]);
+  }, [category, supplyType]);
 
   // Auto-adjust sanctioned load for cottage industries
-  React.useEffect(() => {
-    if (isCottageIndustry()) {
+  useEffect(() => {
+    if (category === 'cottage_industries') {
       setSanctionedLoad(0); // Set to 0 for cottage industries
     }
     // Removed auto-reset to 50 since we no longer use sanctioned load input
@@ -452,6 +429,18 @@ const IndustrialCalculator: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="flex justify-end">
+        <SaveToHistoryButton
+          entry={{
+            table: 'calculation_history',
+            type: 'industrial',
+            inputs: { dailyAppliances, occasionalAppliances, sanctionedLoad, category, supplyType, todType, demandType },
+            results: result,
+          }}
+          disabled={dailyAppliances.length === 0 && occasionalAppliances.length === 0}
+        />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

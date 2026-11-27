@@ -1,11 +1,9 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Sun, Calculator, Zap, TrendingUp, Info } from 'lucide-react';
 import { generateSolarRecommendation } from '../../utils/calculations';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import SaveToHistoryButton from '../common/SaveToHistoryButton';
 
 const SolarRecommendations: React.FC = () => {
-  const { user } = useAuth();
   const [monthlyBill, setMonthlyBill] = useState<number>(6000);
   const [tariffType, setTariffType] = useState<'domestic' | 'commercial'>('domestic');
   
@@ -16,28 +14,6 @@ const SolarRecommendations: React.FC = () => {
   
   // Calculate daily units from the accurate monthly units
   const dailyUnits = recommendation.monthlyUnits / 30;
-
-  useEffect(() => {
-    if (user && monthlyBill > 0) {
-      const t = setTimeout(() => {
-        void saveRecommendationToHistory({ monthlyBill, tariffType }, recommendation);
-      }, 800);
-      return () => clearTimeout(t);
-    }
-  }, [user, monthlyBill, tariffType, recommendation]);
-
-  const saveRecommendationToHistory = async (inputs: any, results: any) => {
-    try {
-      await supabase.from('recommendation_history').insert({
-        user_id: user?.id,
-        recommendation_type: 'solar',
-        inputs,
-        results,
-      });
-    } catch (error) {
-      console.error('Error saving recommendation history:', error);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -84,6 +60,18 @@ const SolarRecommendations: React.FC = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
                 min="0"
                 placeholder="Enter your monthly bill amount"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <SaveToHistoryButton
+                entry={{
+                  table: 'recommendation_history',
+                  type: 'solar',
+                  inputs: { monthlyBill, tariffType },
+                  results: recommendation,
+                }}
+                disabled={monthlyBill <= 0}
               />
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { TariffSlab, DomesticResult, CommercialResult, IndustrialResult } from '../types';
 
 // Domestic Tariff Slabs
-const domesticTariff: TariffSlab[] = [
+export const domesticTariff: TariffSlab[] = [
   { threshold: 30, rate: 1.90 },
   { threshold: 75, rate: 3.00 },
   { threshold: 125, rate: 4.50 },
@@ -11,7 +11,7 @@ const domesticTariff: TariffSlab[] = [
 ];
 
 // Commercial Tariff Slabs (Energy Charges) - Updated rates
-const commercialEnergyTariff: TariffSlab[] = [
+export const commercialEnergyTariff: TariffSlab[] = [
   { threshold: 50, rate: 5.40 },
   { threshold: 100, rate: 7.65 },
   { threshold: 300, rate: 9.05 },
@@ -19,11 +19,13 @@ const commercialEnergyTariff: TariffSlab[] = [
   { threshold: Infinity, rate: 10.15 }
 ];
 
-const commercialFixedRate = 75; // Rs per kW per month
-const industrialFixedRate = 75; // Rs per kW per month
+// NOTE: defined in the original code but NOT currently applied by calculateCommercialBill.
+// Kept unchanged pending tariff verification (see docs/TARIFF_DATA_REVIEW.md).
+export const commercialFixedRate = 75; // Rs per kW per month
+export const industrialFixedRate = 75; // Rs per kW per month
 
 // Industrial Tariff Rates based on the provided slab data
-const industrialTariffRates = {
+export const industrialTariffRates = {
   // Industry (General) - LT Supply
   industry_general: {
     LT: 6.70,
@@ -271,7 +273,7 @@ export function calculateCommercialBill(
     case 'green_power':
       rate = 12.25;
       break;
-    default:
+    default: {
       // Use telescopic tariff for standard commercial
       const { bill, breakdown } = calculateTelescopicBill(totalUnits, commercialEnergyTariff);
       return {
@@ -279,6 +281,7 @@ export function calculateCommercialBill(
         totalBill: bill,
         breakdown
       };
+    }
   }
 
   // For special commercial types, use flat rate
@@ -314,7 +317,7 @@ export function calculateIndustrialBill(
 
   // Determine energy rate based on category and supply type
   switch (category) {
-    case 'industry_general':
+    case 'industry_general': {
       categoryName = 'Industry (General)';
       const generalRates = industrialTariffRates.industry_general;
       
@@ -333,20 +336,23 @@ export function calculateIndustrialBill(
         }
       }
       break;
+    }
     
-    case 'seasonal_off_season':
+    case 'seasonal_off_season': {
       categoryName = 'Seasonal Industries (off-season)';
       supplyTypeName = `${supplyType} Supply`;
       const seasonalRates = industrialTariffRates.seasonal_off_season;
       energyRate = seasonalRates[supplyType as keyof typeof seasonalRates] || 0;
       break;
+    }
     
-    case 'energy_intensive':
+    case 'energy_intensive': {
       categoryName = 'Energy Intensive Industries';
       supplyTypeName = `${supplyType} Supply`;
       const intensiveRates = industrialTariffRates.energy_intensive;
       energyRate = intensiveRates[supplyType as keyof typeof intensiveRates] || 0;
       break;
+    }
     
     case 'cottage_industries':
       categoryName = 'Cottage Industries (up to 10 HP)';
@@ -354,12 +360,13 @@ export function calculateIndustrialBill(
       energyRate = industrialTariffRates.cottage_industries.LT;
       break;
     
-    case 'industrial_colonies':
+    case 'industrial_colonies': {
       categoryName = 'Industrial Colonies';
       supplyTypeName = `${supplyType} Supply`;
       const colonyRates = industrialTariffRates.industrial_colonies;
       energyRate = colonyRates[supplyType as keyof typeof colonyRates] || 0;
       break;
+    }
     
     default:
       categoryName = 'Industry (General)';
@@ -445,7 +452,7 @@ export function calculateROI(
 }
 
 // Solar system cost table based on market rates
-const solarSystemCosts = {
+export const solarSystemCosts = {
   1: { min: 65000, max: 85000 },
   2: { min: 105000, max: 125000 },
   3: { min: 150000, max: 170000 },

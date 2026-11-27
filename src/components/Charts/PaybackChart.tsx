@@ -1,4 +1,5 @@
 import React from 'react';
+import type { TooltipItem } from 'chart.js';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -97,7 +98,7 @@ const PaybackChart: React.FC<PaybackChartProps> = ({
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function(context: TooltipItem<'line'>) {
             return `${context.dataset.label}: ₹${context.parsed.y.toLocaleString()}`;
           }
         }
@@ -119,7 +120,7 @@ const PaybackChart: React.FC<PaybackChartProps> = ({
           text: 'Amount (₹)',
         },
         ticks: {
-          callback: function(value: any) {
+          callback: function(value: string | number) {
             return '₹' + value.toLocaleString();
           }
         }

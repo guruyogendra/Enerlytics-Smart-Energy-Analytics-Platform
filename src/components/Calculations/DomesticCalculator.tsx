@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Plus, Trash2, Home, Zap } from 'lucide-react';
 import { calculateDomesticBill } from '../../utils/calculations';
 import { Appliance } from '../../types';
-import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import SaveToHistoryButton from '../common/SaveToHistoryButton';
 import BillBreakdownChart from '../Charts/BillBreakdownChart';
 import EnergyDistributionChart from '../Charts/EnergyDistributionChart';
 
@@ -120,7 +119,6 @@ const ApplianceTable: React.FC<ApplianceTableProps> = ({
 );
 
 const DomesticCalculator: React.FC = () => {
-  const { user } = useAuth();
   const [dailyAppliances, setDailyAppliances] = useState<Appliance[]>([
     { name: 'LED Light', rating: 10, quantity: 5, hours: 6 },
     { name: 'Fan', rating: 75, quantity: 3, hours: 8 },
@@ -130,7 +128,11 @@ const DomesticCalculator: React.FC = () => {
     { name: 'Washing Machine', rating: 500, quantity: 1, hours: 5 },
   ]);
 
-  const [result, setResult] = useState(calculateDomesticBill(dailyAppliances, occasionalAppliances));
+  // Derived directly from the inputs; history is saved only when the user clicks "Save to history".
+  const result = useMemo(
+    () => calculateDomesticBill(dailyAppliances, occasionalAppliances),
+    [dailyAppliances, occasionalAppliances]
+  );
 
   const addAppliance = (type: 'daily' | 'occasional') => {
     const newAppliance: Appliance = { name: '', rating: 0, quantity: 1, hours: type === 'daily' ? 1 : 1 };
@@ -163,31 +165,6 @@ const DomesticCalculator: React.FC = () => {
       setOccasionalAppliances(updated);
     }
   };
-
-  React.useEffect(() => {
-    const newResult = calculateDomesticBill(dailyAppliances, occasionalAppliances);
-    setResult(newResult);
-    
-    // Save to history if user is logged in
-    if (user && (dailyAppliances.length > 0 || occasionalAppliances.length > 0)) {
-      saveToHistory(newResult);
-    }
-  }, [dailyAppliances, occasionalAppliances]);
-
-  const saveToHistory = async (calculationResult: any) => {
-    try {
-      await supabase.from('calculation_history').insert({
-        user_id: user?.id,
-        calculation_type: 'domestic',
-        inputs: { dailyAppliances, occasionalAppliances },
-        results: calculationResult,
-      });
-    } catch (error) {
-      console.error('Error saving calculation history:', error);
-    }
-  };
-
-  
 
   return (
     <div className="space-y-6">
@@ -242,6 +219,18 @@ const DomesticCalculator: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="flex justify-end">
+        <SaveToHistoryButton
+          entry={{
+            table: 'calculation_history',
+            type: 'domestic',
+            inputs: { dailyAppliances, occasionalAppliances },
+            results: result,
+          }}
+          disabled={dailyAppliances.length === 0 && occasionalAppliances.length === 0}
+        />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

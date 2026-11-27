@@ -34,8 +34,8 @@ const LoginForm: React.FC = () => {
       const { error } = await signIn(data.email, data.password);
       if (error) throw error;
       navigate('/dashboard');
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

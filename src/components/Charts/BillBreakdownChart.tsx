@@ -1,4 +1,5 @@
 import React from 'react';
+import type { TooltipItem } from 'chart.js';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -97,7 +98,7 @@ const BillBreakdownChart: React.FC<BillBreakdownChartProps> = ({ data }) => {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: any) {
+          callback: function(value: string | number) {
             return '₹' + value.toLocaleString();
           }
         }
@@ -122,7 +123,7 @@ const BillBreakdownChart: React.FC<BillBreakdownChartProps> = ({ data }) => {
       },
       tooltip: {
         callbacks: {
-          label: function(context: any) {
+          label: function(context: TooltipItem<'doughnut'>) {
             const value = context.parsed;
             const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
             const percentage = ((value / total) * 100).toFixed(1);

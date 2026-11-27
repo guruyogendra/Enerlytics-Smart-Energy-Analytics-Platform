@@ -80,38 +80,22 @@ export interface SolarRecommendation {
   }>;
 }
 
-export interface User {
-  id: string;
-  email: string;
-  full_name: string;
-  is_admin: boolean;
-  created_at: string;
-}
+/** A JSON-serialisable object as stored in the jsonb inputs/results columns. */
+export type JsonObject = { [key: string]: unknown };
 
-export interface CalculationHistory {
-  id: string;
-  user_id: string;
-  calculation_type: 'domestic' | 'commercial' | 'industrial';
-  inputs: any;
-  results: any;
-  created_at: string;
-}
-
-export interface EstimationHistory {
-  id: string;
-  user_id: string;
-  estimation_type: 'payback' | 'costbenefit' | 'breakeven' | 'roi' | 'unified';
-  inputs: any;
-  results: any;
-  created_at: string;
-}
-
-export interface TariffSettings {
-  id: string;
-  tariff_type: 'domestic' | 'commercial' | 'industrial';
-  tariff_data: any;
-  updated_by: string;
-  updated_at: string;
+/**
+ * Fields the History page reads from stored results. All optional because
+ * rows are user data written by different calculators over time.
+ */
+export interface StoredResults extends JsonObject {
+  totalUnits?: number;
+  totalBill?: number;
+  fixedCharge?: number;
+  energyCharge?: number;
+  paybackPeriod?: number;
+  totalSavings25Years?: number;
+  requiredKW?: number;
+  savings?: number;
 }
 
 export interface User {
@@ -126,8 +110,8 @@ export interface CalculationHistory {
   id: string;
   user_id: string;
   calculation_type: 'domestic' | 'commercial' | 'industrial';
-  inputs: any;
-  results: any;
+  inputs: JsonObject;
+  results: StoredResults;
   created_at: string;
 }
 
@@ -135,8 +119,8 @@ export interface EstimationHistory {
   id: string;
   user_id: string;
   estimation_type: 'payback' | 'costbenefit' | 'breakeven' | 'roi' | 'unified';
-  inputs: any;
-  results: any;
+  inputs: JsonObject;
+  results: StoredResults;
   created_at: string;
 }
 
@@ -145,15 +129,17 @@ export interface RecommendationHistory {
   id: string;
   user_id: string;
   recommendation_type: 'solar';
-  inputs: any;
-  results: any;
+  inputs: JsonObject;
+  results: StoredResults;
   created_at: string;
 }
+
+export type AnyHistoryItem = CalculationHistory | EstimationHistory | RecommendationHistory;
 
 export interface TariffSettings {
   id: string;
   tariff_type: 'domestic' | 'commercial' | 'industrial';
-  tariff_data: any;
+  tariff_data: JsonObject;
   updated_by: string;
   updated_at: string;
 }

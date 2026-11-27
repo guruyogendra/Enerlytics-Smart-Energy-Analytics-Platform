@@ -2,7 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Calculator, Calendar, Trash2, Eye } from 'lucide-react';
-import { CalculationHistory as CalculationHistoryType, EstimationHistory as EstimationHistoryType, RecommendationHistory as RecommendationHistoryType } from '../../types';
+import {
+  AnyHistoryItem,
+  CalculationHistory as CalculationHistoryType,
+  EstimationHistory as EstimationHistoryType,
+  RecommendationHistory as RecommendationHistoryType,
+} from '../../types';
+
+// Returns the *_type value of whichever history kind the item is.
+const historyItemType = (item: AnyHistoryItem): string =>
+  'calculation_type' in item
+    ? item.calculation_type
+    : 'estimation_type' in item
+      ? item.estimation_type
+      : item.recommendation_type;
 
 const CalculationHistory: React.FC = () => {
   const { user } = useAuth();
@@ -11,62 +24,65 @@ const CalculationHistory: React.FC = () => {
   const [estimationHistory, setEstimationHistory] = useState<EstimationHistoryType[]>([]);
   const [recommendationHistory, setRecommendationHistory] = useState<RecommendationHistoryType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedItem, setSelectedItem] = useState<AnyHistoryItem | null>(null);
 
+  // The fetch functions live inside the effect so its only dependency is `user`.
+  // They only call state setters (which are stable), so this cannot loop.
   useEffect(() => {
-    if (user) {
-      void fetchHistory();
-      void fetchEstimationHistory();
-      void fetchRecommendationHistory();
-    }
+    if (!user) return;
+    const userId = user.id;
+
+    const fetchHistory = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('calculation_history')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setHistory(data || []);
+      } catch (error) {
+        console.error('Error fetching calculation history:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const fetchEstimationHistory = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('estimation_history')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setEstimationHistory(data || []);
+      } catch (error) {
+        console.error('Error fetching estimation history:', error);
+      }
+    };
+
+    const fetchRecommendationHistory = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('recommendation_history')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setRecommendationHistory(data || []);
+      } catch (error) {
+        console.error('Error fetching recommendation history:', error);
+      }
+    };
+
+    void fetchHistory();
+    void fetchEstimationHistory();
+    void fetchRecommendationHistory();
   }, [user]);
-
-  const fetchHistory = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('calculation_history')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setHistory(data || []);
-    } catch (error) {
-      console.error('Error fetching calculation history:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchEstimationHistory = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('estimation_history')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setEstimationHistory(data || []);
-    } catch (error) {
-      console.error('Error fetching estimation history:', error);
-    }
-  };
-
-  const fetchRecommendationHistory = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('recommendation_history')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setRecommendationHistory(data || []);
-    } catch (error) {
-      console.error('Error fetching recommendation history:', error);
-    }
-  };
 
   const deleteHistoryItem = async (id: string) => {
     try {
@@ -321,7 +337,7 @@ const CalculationHistory: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="text-sm text-gray-600">Type</div>
-                    <div className="font-semibold capitalize">{selectedItem.calculation_type || selectedItem.estimation_type || selectedItem.recommendation_type}</div>
+                    <div className="font-semibold capitalize">{historyItemType(selectedItem)}</div>
                   </div>
                   <div>
                     <div className="text-sm text-gray-600">Date</div>
